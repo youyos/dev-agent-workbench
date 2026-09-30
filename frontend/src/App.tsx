@@ -6,6 +6,7 @@ import { MentionComposer } from "./components/MentionComposer";
 import { RunInspector } from "./components/RunInspector";
 import { ExtensionDrawer } from "./components/ExtensionDrawer";
 import { getHealth, streamRun } from "./lib/api";
+import { createId } from "./lib/id";
 import type { ChatEntry, MentionRef, RunEvent } from "./types";
 
 const starterPrompts = [
@@ -54,12 +55,12 @@ export default function App() {
 
   async function submit(message: string, mentions: MentionRef[]) {
     const userEntry: ChatEntry = {
-      id: crypto.randomUUID(),
+      id: createId(),
       role: "user",
       content: message,
       mentions,
     };
-    const assistantId = crypto.randomUUID();
+    const assistantId = createId();
     setMessages((items) => [
       ...items,
       userEntry,
