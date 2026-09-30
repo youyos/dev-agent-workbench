@@ -80,6 +80,24 @@ export default function App() {
             ),
           );
         }
+        if (event.type === "run.needs_input") {
+          setMessages((items) =>
+            items.map((item) =>
+              item.id === assistantId
+                ? { ...item, content: String(event.data.question ?? "请补充更多信息。") }
+                : item,
+            ),
+          );
+        }
+        if (event.type === "message.completed" && event.data.content) {
+          setMessages((items) =>
+            items.map((item) =>
+              item.id === assistantId && !item.content
+                ? { ...item, content: String(event.data.content) }
+                : item,
+            ),
+          );
+        }
         if (event.type === "run.error") {
           throw new Error(String(event.data.message ?? "运行失败"));
         }

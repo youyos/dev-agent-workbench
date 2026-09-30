@@ -88,9 +88,24 @@ class AgentPipeline:
             },
         )
         if intent.needs_clarification:
+            question = intent.clarification_question or "请补充执行所需信息。"
             yield event(
                 "run.needs_input",
-                {"question": intent.clarification_question or "请补充执行所需信息。"},
+                {
+                    "question": question,
+                    "explanation": (
+                        "当前输入无法确定唯一任务目标；继续猜测可能选择错误能力，因此暂停执行并请求补充信息。"
+                    ),
+                },
+            )
+            yield event(
+                "message.completed",
+                {
+                    "content": question,
+                    "character_count": len(question),
+                    "duration_ms": 0,
+                    "status": "needs_input",
+                },
             )
             return
 

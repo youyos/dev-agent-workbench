@@ -1,9 +1,19 @@
 import pytest
 
 from app.catalog import ContextResolver, build_default_registry
-from app.models import AgentRunRequest, MentionKind, MentionRef
+from app.models import AgentRunRequest, MentionKind, MentionRef, TaskIntent
 from app.pipeline import AgentPipeline
 from app.providers.demo import DemoModelProvider
+
+
+class NeedsInputProvider(DemoModelProvider):
+    async def analyze_intent(self, message, context):
+        return TaskIntent(
+            goal=message,
+            intent="unknown",
+            needs_clarification=True,
+            clarification_question="请问您输入 123 是想执行什么操作？",
+        )
 
 
 @pytest.mark.asyncio
@@ -54,3 +64,17 @@ async def test_explicit_skill_is_forced():
 
     assert selected["code-review"]["forced"] is True
 
+
+@pytest.mark.asyncio
+async def test_needs_input_is_also_emitted_as_assistant_message():
+    registry, catalog = build_default_registry()
+    pipeline = AgentPipeline(
+        registry=registry,
+        resolver=ContextResolver(catalog),
+        provider=NeedsInputProvider(),
+    )
+
+    events = [event async for event in pipeline.run(AgentRunRequest(message="123"))]
+
+    assert [event.type for event in events][-2:] == ["run.needs_input", "message.completed"]
+    assert events[-1].data["content"] == "请问您输入 123 是想执行什么操作？"

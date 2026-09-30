@@ -12,4 +12,4 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 .DS_Store
 backend/data/
-.idea
+.idea/

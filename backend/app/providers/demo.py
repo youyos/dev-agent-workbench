@@ -24,6 +24,17 @@ class DemoModelProvider(ModelProvider):
         context: list[ResolvedContextItem],
     ) -> TaskIntent:
         normalized = message.casefold()
+        if re.fullmatch(r"[\d\s.,_-]+", normalized) or len(normalized.strip()) <= 1:
+            return TaskIntent(
+                goal=message,
+                intent="unknown",
+                expected_output="明确的任务目标",
+                needs_clarification=True,
+                clarification_question=(
+                    f"请问您输入“{message.strip()}”是想执行什么操作？"
+                    "例如：数学计算、查询信息、测试系统，还是其他需求？"
+                ),
+            )
         if any(term in normalized for term in ("失败", "异常", "报错", "定位", "debug")):
             intent_name = "diagnose_failure"
             expected = "根因、证据、修复建议和验证方案"

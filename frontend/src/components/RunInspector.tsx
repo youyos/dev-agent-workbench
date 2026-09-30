@@ -12,6 +12,7 @@ import {
   Eye,
   FileSearch,
   GitBranch,
+  HelpCircle,
   ListChecks,
   LoaderCircle,
   Play,
@@ -36,6 +37,7 @@ const config: Record<string, { label: string; icon: typeof Play; chapter: string
   "message.completed": { label: "回答生成完成", icon: BookOpenCheck, chapter: "回答" },
   "run.completed": { label: "运行完成", icon: Check, chapter: "完成" },
   "run.error": { label: "运行失败", icon: CircleDot, chapter: "错误" },
+  "run.needs_input": { label: "等待用户补充", icon: HelpCircle, chapter: "交互" },
 };
 
 const defaultOpenTypes = new Set([
@@ -165,6 +167,12 @@ function EventDetails({ event }: { event: RunEvent }) {
           <KeyValue label="总耗时" value={`${data.duration_ms ?? 0} ms`} />
           <KeyValue label="使用能力" value={(data.selected_capabilities ?? []).join("、") || "无"} />
         </>
+      )}
+      {event.type === "run.needs_input" && (
+        <div className="needs-input-card">
+          <HelpCircle size={14} />
+          <div><span>Agent 的追问</span><strong>{String(data.question ?? "请补充更多信息。")}</strong></div>
+        </div>
       )}
       <details className="raw-event">
         <summary>查看原始事件数据</summary>
@@ -315,5 +323,6 @@ function eventSummary(event: RunEvent): string {
   if (event.type === "response.synthesizing") return `使用 ${event.data.result_count ?? 0} 个能力结果生成回答`;
   if (event.type === "message.completed") return `${event.data.character_count ?? 0} 个字符`;
   if (event.type === "run.completed") return `总耗时 ${event.data.duration_ms ?? 0} ms`;
+  if (event.type === "run.needs_input") return event.data.question ?? "需要用户补充信息";
   return event.data.message ?? "";
 }
