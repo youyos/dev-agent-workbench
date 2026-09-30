@@ -48,6 +48,7 @@ class TaskIntent(BaseModel):
     entities: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     expected_output: str = "clear answer"
+    response_style: Literal["direct", "concise", "detailed"] = "concise"
     needs_clarification: bool = False
     clarification_question: str = ""
 

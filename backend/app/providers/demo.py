@@ -29,6 +29,7 @@ class DemoModelProvider(ModelProvider):
                 goal=message,
                 intent="unknown",
                 expected_output="明确的任务目标",
+                response_style="direct",
                 needs_clarification=True,
                 clarification_question=(
                     f"请问您输入“{message.strip()}”是想执行什么操作？"
@@ -38,15 +39,19 @@ class DemoModelProvider(ModelProvider):
         if any(term in normalized for term in ("失败", "异常", "报错", "定位", "debug")):
             intent_name = "diagnose_failure"
             expected = "根因、证据、修复建议和验证方案"
+            response_style = "detailed"
         elif any(term in normalized for term in ("课程", "学生", "学习", "完成率")):
             intent_name = "analyze_learning_data"
             expected = "风险摘要和可执行干预建议"
+            response_style = "detailed"
         elif any(term in normalized for term in ("审查", "review", "代码")):
             intent_name = "review_code"
             expected = "按优先级排列的问题和修改建议"
+            response_style = "detailed"
         else:
             intent_name = "general_assistance"
             expected = "清晰、可执行的回答"
+            response_style = "direct"
 
         entities = [item.title for item in context if item.mention.kind.value in {"file", "resource"}]
         constraints = re.findall(r"(?:不要|必须|只允许|限定)[^，。；\n]+", message)
@@ -56,6 +61,7 @@ class DemoModelProvider(ModelProvider):
             entities=entities,
             constraints=constraints,
             expected_output=expected,
+            response_style=response_style,
         )
 
     async def choose_capabilities(
@@ -124,17 +130,22 @@ class DemoModelProvider(ModelProvider):
                 "作业正确率和视频观看完成度，再对连续两次未完成学习任务的学生进行分层提醒。\n"
             )
         else:
-            answer = "## 处理结果\n\n已根据结构化意图和已选能力完成分析。\n"
+            answer = (
+                "你好！有什么可以帮你？"
+                if message.strip() in {"你好", "您好", "hello", "hi"}
+                else "好的，我已经理解你的请求。"
+            )
 
         if observations:
             answer += "\n## 证据\n\n" + "\n".join(f"- {item}" for item in observations) + "\n"
         if tests:
             answer += "\n## 验证建议\n\n" + "\n".join(f"- {item}" for item in tests) + "\n"
-        history_count = sum(item.source == "conversation-history" for item in context)
-        answer += (
-            f"\n本轮使用了 {history_count} 组历史上下文，解析了 {len(context) - history_count} 个 @ 上下文，"
-            f"并执行了 {len(results)} 个能力。"
-        )
+        if intent.response_style != "direct":
+            history_count = sum(item.source == "conversation-history" for item in context)
+            answer += (
+                f"\n本轮使用了 {history_count} 组历史上下文，"
+                f"解析了 {len(context) - history_count} 个 @ 上下文，并执行了 {len(results)} 个能力。"
+            )
 
         for chunk in _chunk_text(answer, 24):
             await asyncio.sleep(0.015)

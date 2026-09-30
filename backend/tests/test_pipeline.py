@@ -17,6 +17,13 @@ class NeedsInputProvider(DemoModelProvider):
 
 
 @pytest.mark.asyncio
+async def test_simple_fact_style_is_direct():
+    intent = await DemoModelProvider().analyze_intent("你好", [])
+
+    assert intent.response_style == "direct"
+
+
+@pytest.mark.asyncio
 async def test_pipeline_emits_structured_stages_in_order():
     registry, catalog = build_default_registry()
     pipeline = AgentPipeline(
@@ -101,5 +108,3 @@ async def test_pipeline_carries_bounded_conversation_history():
     assert events[0].data["history_count"] == 2
     assert events[-1].type == "run.completed"
     assert events[-1].data["history_count"] == 2
-    answer = next(event for event in events if event.type == "message.completed")
-    assert "1 组历史上下文" in answer.data["content"]

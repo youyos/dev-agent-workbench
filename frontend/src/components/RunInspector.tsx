@@ -213,6 +213,7 @@ function IntentDetails({ data }: { data: Record<string, any> }) {
       <KeyValue label="识别实体" value={(data.entities ?? []).join("、") || "无"} />
       <KeyValue label="约束" value={(data.constraints ?? []).join("、") || "无"} />
       <KeyValue label="期望输出" value={data.expected_output} />
+      <KeyValue label="回答风格" value={data.response_style} />
     </>
   );
 }

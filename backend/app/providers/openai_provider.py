@@ -111,11 +111,14 @@ class OpenAIModelProvider(ModelProvider):
         stream = await self._client.responses.create(
             model=self._model,
             instructions=(
-                "You are a precise assistant. Answer in Chinese. Use only the supplied context and "
-                "capability results for factual claims. State uncertainty instead of guessing."
+                "Answer naturally in Chinese and use only supplied context and capability results for facts. "
+                "For direct style, answer in one or two sentences without headings, lists, tool names, HTTP "
+                "statuses, raw field names, or unsolicited next steps. Use structure only for detailed style. "
+                "State uncertainty instead of guessing."
             ),
             input=(
-                f"User request:\n{message}\n\nIntent:\n{intent.model_dump_json()}\n\n"
+                f"User request:\n{message}\n\nAnswer style: {intent.response_style}\n"
+                f"Intent:\n{intent.model_dump_json()}\n\n"
                 f"Context:\n{_context_text(context)}\n\n"
                 f"Capability results:\n{[item.model_dump() for item in results]}"
             ),
