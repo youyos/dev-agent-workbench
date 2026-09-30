@@ -1,0 +1,6 @@
+{
+  "id": "course-analysis",
+  "display_name": "教学数据分析",
+  "triggers": ["课程", "学生", "完成率", "教学", "学习"],
+  "permissions": ["read"]
+}

@@ -1,0 +1,6 @@
+{
+  "id": "code-review",
+  "display_name": "代码审查",
+  "triggers": ["审查", "review", "代码", "风险"],
+  "permissions": ["read"]
+}

@@ -1,0 +1,6 @@
+{
+  "id": "debug-code",
+  "display_name": "支付故障诊断",
+  "triggers": ["报错", "失败", "异常", "debug", "定位", "支付"],
+  "permissions": ["read"]
+}
