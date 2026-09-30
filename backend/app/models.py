@@ -25,7 +25,7 @@ class MentionRef(BaseModel):
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(min_length=1, max_length=20_000)
 
 
 class AgentRunRequest(BaseModel):

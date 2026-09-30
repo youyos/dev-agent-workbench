@@ -71,13 +71,14 @@ export async function removeMcpServer(serverId: string): Promise<any> {
 export async function streamRun(
   message: string,
   mentions: MentionRef[],
+  history: Array<{ role: "user" | "assistant"; content: string }>,
   onEvent: (event: RunEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch("/api/runs/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, mentions, history: [] }),
+    body: JSON.stringify({ message, mentions, history }),
     signal,
   });
   if (!response.ok || !response.body) {

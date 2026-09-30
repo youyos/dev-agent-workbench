@@ -8,9 +8,12 @@ from .catalog import CapabilityRegistry, ContextResolver
 from .models import (
     AgentRunRequest,
     CapabilityResult,
+    ChatMessage,
     ExecutionPlan,
     MentionKind,
+    MentionRef,
     PlanStep,
+    ResolvedContextItem,
     RunEvent,
 )
 from .providers.base import ModelProvider
@@ -33,6 +36,7 @@ class AgentPipeline:
         sequence = 0
         run_started_at = perf_counter()
         provider_name = type(self._provider).__name__
+        history = _trim_history(request.history)
 
         def event(event_type: str, data: dict) -> RunEvent:
             nonlocal sequence
@@ -44,6 +48,8 @@ class AgentPipeline:
             {
                 "message": request.message,
                 "mention_count": len(request.mentions),
+                "history_count": len(history),
+                "history_preview": [item.model_dump() for item in history[-4:]],
                 "provider": provider_name,
                 "explanation": "创建一次独立运行，并固定本轮用户输入与显式 @ 引用。",
             },
@@ -72,9 +78,14 @@ class AgentPipeline:
                 ),
             },
         )
+        model_context = _context_with_history(
+            context,
+            history,
+            include_history=provider_name in {"QwenModelProvider", "DemoModelProvider"},
+        )
 
         stage_started_at = perf_counter()
-        intent = await self._provider.analyze_intent(request.message, context)
+        intent = await self._provider.analyze_intent(request.message, model_context)
         yield event(
             "intent.detected",
             {
@@ -250,7 +261,7 @@ class AgentPipeline:
         async for delta in self._provider.stream_answer(
             request.message,
             intent,
-            context,
+            model_context,
             results,
         ):
             full_answer += delta
@@ -268,7 +279,51 @@ class AgentPipeline:
             {
                 "selected_capabilities": [item.capability_id for item in route.selections],
                 "context_count": len(context),
+                "history_count": len(history),
                 "duration_ms": round((perf_counter() - run_started_at) * 1_000, 2),
                 "explanation": "本轮所有计划步骤和回答合成均已结束。",
             },
         )
+
+
+def _trim_history(
+    history: list[ChatMessage],
+    *,
+    max_messages: int = 20,
+    max_characters: int = 24_000,
+) -> list[ChatMessage]:
+    selected: list[ChatMessage] = []
+    character_count = 0
+    for message in reversed(history[-max_messages:]):
+        next_count = character_count + len(message.content)
+        if selected and next_count > max_characters:
+            break
+        if next_count > max_characters:
+            selected.append(message.model_copy(update={"content": message.content[-max_characters:]}))
+            break
+        selected.append(message)
+        character_count = next_count
+    return list(reversed(selected))
+
+
+def _context_with_history(
+    context: list[ResolvedContextItem],
+    history: list[ChatMessage],
+    *,
+    include_history: bool,
+) -> list[ResolvedContextItem]:
+    if not include_history or not history:
+        return context
+    history_text = "\n".join(f"{item.role}: {item.content}" for item in history)
+    history_item = ResolvedContextItem(
+        mention=MentionRef(
+            kind=MentionKind.RESOURCE,
+            id="conversation-history",
+            label="当前会话历史",
+        ),
+        source="conversation-history",
+        title=f"最近 {len(history)} 条对话历史",
+        content=history_text,
+        metadata={"history_count": len(history), "shared_with": "qwen-or-local-demo"},
+    )
+    return [*context, history_item]

@@ -1,4 +1,4 @@
-import { Bot, Braces, Circle, Command, Github, Layers3, PlugZap, Sparkles } from "lucide-react";
+import { Bot, Braces, Circle, Command, Github, Layers3, MessageSquarePlus, PlugZap, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
@@ -29,8 +29,10 @@ const starterPrompts = [
   },
 ];
 
+const CONVERSATION_STORAGE_KEY = "agent-flow-lab:conversation:v1";
+
 export default function App() {
-  const [messages, setMessages] = useState<ChatEntry[]>([]);
+  const [messages, setMessages] = useState<ChatEntry[]>(loadConversation);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState("连接中");
@@ -53,7 +55,20 @@ export default function App() {
     conversation.scrollTo({ top: conversation.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    localStorage.setItem(CONVERSATION_STORAGE_KEY, JSON.stringify(messages.slice(-50)));
+  }, [messages]);
+
   async function submit(message: string, mentions: MentionRef[]) {
+    const history = messages
+      .filter((item) => item.content.trim())
+      .slice(-20)
+      .map((item) => ({
+        role: item.role,
+        content: item.role === "user" && item.mentions?.length
+          ? `${item.mentions.map((mention) => `@${mention.label}`).join(" ")}\n${item.content}`
+          : item.content,
+      }));
     const userEntry: ChatEntry = {
       id: createId(),
       role: "user",
@@ -69,7 +84,7 @@ export default function App() {
     setEvents([]);
     setRunning(true);
     try {
-      await streamRun(message, mentions, (event) => {
+      await streamRun(message, mentions, history, (event) => {
         setEvents((items) => [...items, event]);
         if (event.type === "message.delta") {
           setMessages((items) =>
@@ -115,6 +130,12 @@ export default function App() {
     }
   }
 
+  function newConversation() {
+    setMessages([]);
+    setEvents([]);
+    localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -142,11 +163,18 @@ export default function App() {
               <span className="eyebrow">PLAYGROUND</span>
               <h1>把能力串成真正的 Agent</h1>
             </div>
-            <div className="pipeline-mini">
-              <span>Context</span><i />
-              <span>Intent</span><i />
-              <span>Route</span><i />
-              <span>Execute</span>
+            <div className="chat-header-actions">
+              {messages.length > 0 && (
+                <button className="new-chat-button" disabled={running} onClick={newConversation}>
+                  <MessageSquarePlus size={13} /> 新对话
+                </button>
+              )}
+              <div className="pipeline-mini">
+                <span>Context</span><i />
+                <span>Intent</span><i />
+                <span>Route</span><i />
+                <span>Execute</span>
+              </div>
             </div>
           </div>
 
@@ -169,6 +197,20 @@ export default function App() {
       <ExtensionDrawer open={extensionsOpen} onClose={() => setExtensionsOpen(false)} health={health} />
     </div>
   );
+}
+
+function loadConversation(): ChatEntry[] {
+  try {
+    const raw = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && ["user", "assistant"].includes(item.role) && typeof item.content === "string")
+      .slice(-50);
+  } catch {
+    return [];
+  }
 }
 
 function Welcome({ onStart }: { onStart: (message: string, mentions: MentionRef[]) => void }) {

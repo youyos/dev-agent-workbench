@@ -130,7 +130,11 @@ class DemoModelProvider(ModelProvider):
             answer += "\n## 证据\n\n" + "\n".join(f"- {item}" for item in observations) + "\n"
         if tests:
             answer += "\n## 验证建议\n\n" + "\n".join(f"- {item}" for item in tests) + "\n"
-        answer += f"\n本轮解析了 {len(context)} 个 @ 上下文，并执行了 {len(results)} 个能力。"
+        history_count = sum(item.source == "conversation-history" for item in context)
+        answer += (
+            f"\n本轮使用了 {history_count} 组历史上下文，解析了 {len(context) - history_count} 个 @ 上下文，"
+            f"并执行了 {len(results)} 个能力。"
+        )
 
         for chunk in _chunk_text(answer, 24):
             await asyncio.sleep(0.015)

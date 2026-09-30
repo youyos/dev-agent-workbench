@@ -136,6 +136,7 @@ function EventDetails({ event }: { event: RunEvent }) {
           <KeyValue label="用户输入" value={data.message} />
           <KeyValue label="模型提供方" value={data.provider} />
           <KeyValue label="显式引用" value={`${data.mention_count ?? 0} 个`} />
+          <KeyValue label="携带历史" value={`${data.history_count ?? 0} 条`} />
         </>
       )}
       {event.type === "context.resolved" && <ContextDetails data={data} />}
@@ -166,6 +167,7 @@ function EventDetails({ event }: { event: RunEvent }) {
         <>
           <KeyValue label="总耗时" value={`${data.duration_ms ?? 0} ms`} />
           <KeyValue label="使用能力" value={(data.selected_capabilities ?? []).join("、") || "无"} />
+          <KeyValue label="历史消息" value={`${data.history_count ?? 0} 条`} />
         </>
       )}
       {event.type === "run.needs_input" && (

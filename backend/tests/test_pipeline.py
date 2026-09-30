@@ -1,7 +1,7 @@
 import pytest
 
 from app.catalog import ContextResolver, build_default_registry
-from app.models import AgentRunRequest, MentionKind, MentionRef, TaskIntent
+from app.models import AgentRunRequest, ChatMessage, MentionKind, MentionRef, TaskIntent
 from app.pipeline import AgentPipeline
 from app.providers.demo import DemoModelProvider
 
@@ -78,3 +78,28 @@ async def test_needs_input_is_also_emitted_as_assistant_message():
 
     assert [event.type for event in events][-2:] == ["run.needs_input", "message.completed"]
     assert events[-1].data["content"] == "请问您输入 123 是想执行什么操作？"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_carries_bounded_conversation_history():
+    registry, catalog = build_default_registry()
+    pipeline = AgentPipeline(
+        registry=registry,
+        resolver=ContextResolver(catalog),
+        provider=DemoModelProvider(),
+    )
+    request = AgentRunRequest(
+        message="继续",
+        history=[
+            ChatMessage(role="user", content="请分析支付失败"),
+            ChatMessage(role="assistant", content="请提供相关文件"),
+        ],
+    )
+
+    events = [event async for event in pipeline.run(request)]
+
+    assert events[0].data["history_count"] == 2
+    assert events[-1].type == "run.completed"
+    assert events[-1].data["history_count"] == 2
+    answer = next(event for event in events if event.type == "message.completed")
+    assert "1 组历史上下文" in answer.data["content"]

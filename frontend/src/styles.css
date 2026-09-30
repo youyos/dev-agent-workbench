@@ -63,6 +63,8 @@ button { color: inherit; }
 .eyebrow { color: #68758a; font: 500 9px "DM Mono"; letter-spacing: .13em; }
 .chat-header h1, .panel-heading h2 { margin: 5px 0 0; font-size: 18px; letter-spacing: -.035em; }
 .pipeline-mini { display: flex; align-items: center; gap: 7px; color: #7f8ba0; font: 9px "DM Mono"; text-transform: uppercase; }
+.chat-header-actions { display: flex; align-items: center; gap: 12px; }
+.new-chat-button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #2d394b; border-radius: 7px; padding: 6px 8px; background: #111721; color: #8e9caf; font-size: 9px; cursor: pointer; }.new-chat-button:hover { color: #d0d8e4; border-color: #47556c; }.new-chat-button:disabled { opacity: .4; }
 .pipeline-mini i { width: 18px; height: 1px; background: #354052; position: relative; }
 .pipeline-mini i::after { content: ""; position: absolute; right: 0; top: -2px; border-left: 4px solid #354052; border-block: 2px solid transparent; }
 
