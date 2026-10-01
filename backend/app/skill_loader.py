@@ -58,7 +58,15 @@ def load_skill_directory(directory: Path, *, source: str) -> LoadedSkill:
             triggers=[str(item) for item in config.get("triggers", [])],
             permissions=[str(item) for item in config.get("permissions", ["read"])],
             explicit_only=bool(config.get("explicit_only", False)),
-            metadata={"source": source, "root": str(directory)},
+            metadata={
+                "source": source,
+                "root": str(directory),
+                **{
+                    key: config[key]
+                    for key in ("role", "can_own_output", "output_contracts")
+                    if key in config
+                },
+            },
         ),
         instructions=body.strip(),
         root=directory,

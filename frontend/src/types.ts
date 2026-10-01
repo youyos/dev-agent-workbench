@@ -21,5 +21,29 @@ export interface ChatEntry {
   role: "user" | "assistant";
   content: string;
   mentions?: MentionRef[];
+  recommendation?: RecommendationPlan;
 }
 
+export interface RecommendationItem {
+  id?: string | number;
+  type?: string | number;
+  title: string;
+  url?: string;
+  action_label?: string;
+  [key: string]: unknown;
+}
+
+export interface RecommendationSection {
+  key?: string;
+  title: string;
+  items: RecommendationItem[];
+  meta?: Record<string, unknown>;
+}
+
+export interface RecommendationPlan {
+  text?: string;
+  title: string;
+  description?: string;
+  card_type: "lesson" | "homework" | "resource";
+  sections: RecommendationSection[];
+}

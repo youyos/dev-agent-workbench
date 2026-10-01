@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     qwen_model: str = "qwen-plus"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     agent_data_dir: str = "data"
+    enable_unpublished_homework_scenario: bool = False
+    enable_scenario_fixtures: bool = False
     backend_host: str = "127.0.0.1"
     backend_port: int = 8421
 

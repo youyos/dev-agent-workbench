@@ -90,6 +90,17 @@ kbd { font: 10px "DM Mono"; border: 1px solid #394254; border-bottom-color: #535
 .message-body p { margin: 0 0 10px; }
 .message-body h2 { color: #f0f3f8; margin: 22px 0 8px; font-size: 15px; }
 .message-body code { font: 11px "DM Mono"; color: var(--accent); background: #111b16; padding: 2px 4px; border-radius: 4px; }
+.recommendation-card { margin-top: 4px; overflow: hidden; border: 1px solid #2a3850; border-radius: 14px; background: linear-gradient(145deg, #121a27, #0d131c); box-shadow: 0 14px 44px rgba(0,0,0,.22); }
+.recommendation-card-header { display: flex; align-items: flex-start; gap: 12px; padding: 15px; border-bottom: 1px solid #243044; }
+.recommendation-card-icon { width: 34px; height: 34px; display: grid; place-items: center; flex: none; border-radius: 9px; color: #8db0ff; background: #16233a; }
+.recommendation-card-header h2 { margin: 4px 0 3px; color: #edf2f8; font-size: 15px; }.recommendation-card-header p { margin: 0; color: #7f8ca1; font-size: 9px; line-height: 1.55; }
+.recommendation-sections { padding: 12px; }.recommendation-sections > section + section { margin-top: 12px; }
+.recommendation-section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: #9eb4d5; font-size: 9px; }.recommendation-section-title span { min-width: 21px; padding: 2px 6px; border-radius: 99px; color: #0a111b; background: #8db0ff; font: 8px "DM Mono"; text-align: center; }
+.recommendation-items { display: flex; flex-direction: column; gap: 6px; }
+.recommendation-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: center; min-height: 47px; padding: 8px; border: 1px solid #243044; border-radius: 9px; background: #0b1119; }
+.recommendation-type { padding: 4px 6px; border-radius: 5px; color: #71d89a; background: #11271a; font-size: 8px; white-space: nowrap; }
+.recommendation-info { display: flex; flex-direction: column; min-width: 0; }.recommendation-info strong { color: #cbd5e2; font-size: 10px; }.recommendation-info span { overflow: hidden; margin-top: 3px; color: #637188; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.recommendation-row a, .recommendation-row button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #385a95; border-radius: 6px; padding: 5px 7px; color: #9cbcff; background: #142139; font-size: 8px; text-decoration: none; }.recommendation-row button:disabled { opacity: .45; }
 .message-mentions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .message-mentions span { font: 10px "DM Mono"; color: #9abaff; background: #111a2a; border: 1px solid #263b60; border-radius: 5px; padding: 4px 7px; }
 .thinking { display: flex; align-items: center; gap: 5px; color: #8793a6; }
@@ -169,6 +180,7 @@ kbd { font: 10px "DM Mono"; border: 1px solid #394254; border-bottom-color: #535
 .detail-kind { position: absolute; top: 7px; right: 7px; color: #83aaff; font: 7px "DM Mono"; text-transform: uppercase; }
 .detail-empty { color: #68768a; font-size: 9px; }
 .route-summary-row { display: flex; align-items: center; gap: 7px; margin-top: 10px; }.route-summary-row .metric { flex: 1; }
+.output-owner-summary { margin-top: 9px; padding: 8px; border: 1px solid #34432e; border-radius: 7px; background: #101a12; }
 .selection-list { display: flex; flex-direction: column; gap: 6px; }
 .selection-list > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 7px; align-items: center; padding: 8px; border: 1px solid #273244; border-radius: 7px; background: #0a0f16; }
 .selection-list strong { color: #bac5d4; font: 8px "DM Mono"; }.selection-list p { grid-column: 2; margin: 0; color: #748297; font-size: 8px; line-height: 1.5; }

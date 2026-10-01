@@ -5,11 +5,20 @@ import ReactMarkdown from "react-markdown";
 import { MentionComposer } from "./components/MentionComposer";
 import { RunInspector } from "./components/RunInspector";
 import { ExtensionDrawer } from "./components/ExtensionDrawer";
+import { RecommendationCard } from "./components/RecommendationCard";
 import { getHealth, streamRun } from "./lib/api";
+import type { HealthResponse } from "./lib/api";
 import { createId } from "./lib/id";
 import type { ChatEntry, MentionRef, RunEvent } from "./types";
 
-const starterPrompts = [
+interface StarterPrompt {
+  title: string;
+  prompt: string;
+  mentions: MentionRef[];
+  feature?: "unpublished_homework_scenario";
+}
+
+const starterPrompts: StarterPrompt[] = [
   {
     title: "诊断支付失败",
     prompt: "帮我定位支付为什么失败，并给出修改建议和验证方案",
@@ -17,7 +26,13 @@ const starterPrompts = [
       { kind: "skill", id: "debug-code", label: "支付故障诊断" },
       { kind: "file", id: "checkout.py", label: "checkout.py" },
       { kind: "resource", id: "order-1024", label: "订单 #1024" },
-    ] as MentionRef[],
+    ],
+  },
+  {
+    title: "多 Skill 作业卡片",
+    prompt: "查询未发布的作业列表",
+    mentions: [],
+    feature: "unpublished_homework_scenario",
   },
   {
     title: "分析课程风险",
@@ -25,7 +40,7 @@ const starterPrompts = [
     mentions: [
       { kind: "skill", id: "course-analysis", label: "教学数据分析" },
       { kind: "resource", id: "python-course", label: "Python 入门课程" },
-    ] as MentionRef[],
+    ],
   },
 ];
 
@@ -36,7 +51,7 @@ export default function App() {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState("连接中");
-  const [health, setHealth] = useState<{ provider: string; model: string; qwen_configured?: boolean } | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [extensionsOpen, setExtensionsOpen] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +128,15 @@ export default function App() {
             ),
           );
         }
+        if (event.type === "recommendation" && event.data.content) {
+          setMessages((items) =>
+            items.map((item) =>
+              item.id === assistantId
+                ? { ...item, recommendation: event.data.content }
+                : item,
+            ),
+          );
+        }
         if (event.type === "run.error") {
           throw new Error(String(event.data.message ?? "运行失败"));
         }
@@ -180,7 +204,10 @@ export default function App() {
 
           <div className="conversation" ref={conversationRef}>
             {messages.length === 0 ? (
-              <Welcome onStart={submit} />
+              <Welcome
+                onStart={submit}
+                scenarioEnabled={Boolean(health?.features?.unpublished_homework_scenario)}
+              />
             ) : (
               messages.map((message) => <Message entry={message} key={message.id} running={running} />)
             )}
@@ -213,7 +240,16 @@ function loadConversation(): ChatEntry[] {
   }
 }
 
-function Welcome({ onStart }: { onStart: (message: string, mentions: MentionRef[]) => void }) {
+function Welcome({
+  onStart,
+  scenarioEnabled,
+}: {
+  onStart: (message: string, mentions: MentionRef[]) => void;
+  scenarioEnabled: boolean;
+}) {
+  const visiblePrompts = starterPrompts.filter(
+    (item) => !item.feature || scenarioEnabled,
+  );
   return (
     <div className="welcome">
       <div className="orb"><Bot size={28} /></div>
@@ -223,7 +259,7 @@ function Welcome({ onStart }: { onStart: (message: string, mentions: MentionRef[
         输入 <kbd>@</kbd> 选择 Skill、文件、工具或业务对象。每个决策都会显示在右侧运行轨迹中。
       </p>
       <div className="starter-grid">
-        {starterPrompts.map((item, index) => (
+        {visiblePrompts.map((item, index) => (
           <button key={item.title} onClick={() => onStart(item.prompt, item.mentions)}>
             <span className="starter-icon">{index === 0 ? <Github size={17} /> : <Layers3 size={17} />}</span>
             <span><strong>{item.title}</strong><small>{item.prompt}</small></span>
@@ -248,7 +284,7 @@ function Message({ entry, running }: { entry: ChatEntry; running: boolean }) {
           </div>
         )}
         {entry.role === "assistant" ? (
-          entry.content ? <ReactMarkdown>{entry.content}</ReactMarkdown> : (
+          entry.recommendation ? <RecommendationCard plan={entry.recommendation} /> : entry.content ? <ReactMarkdown>{entry.content}</ReactMarkdown> : (
             <span className="thinking"><i /><i /><i />正在解析意图与能力…</span>
           )
         ) : <p>{entry.content}</p>}

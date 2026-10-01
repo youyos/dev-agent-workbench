@@ -99,6 +99,10 @@ class CapabilitySelection(BaseModel):
 class RouteDecision(BaseModel):
     selections: list[CapabilitySelection] = Field(default_factory=list)
     summary: str
+    scenario_id: str = ""
+    primary_skill_id: str = ""
+    supporting_skill_ids: list[str] = Field(default_factory=list)
+    output_contract: str = ""
 
 
 class PlanStep(BaseModel):
@@ -118,6 +122,31 @@ class CapabilityResult(BaseModel):
     success: bool
     summary: str
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class RecommendationItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str | int = ""
+    type: str | int = "作业"
+    title: str = Field(min_length=1)
+    url: str = ""
+    action_label: str = "查看"
+
+
+class RecommendationSection(BaseModel):
+    key: str = ""
+    title: str = Field(min_length=1)
+    items: list[RecommendationItem] = Field(min_length=1)
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class RecommendationPlan(BaseModel):
+    text: str = ""
+    title: str = Field(min_length=1)
+    description: str = ""
+    card_type: Literal["lesson", "homework", "resource"]
+    sections: list[RecommendationSection] = Field(min_length=1)
 
 
 class RunEvent(BaseModel):

@@ -1,5 +1,16 @@
 import type { MentionKind, MentionRef, RunEvent } from "../types";
 
+export interface HealthResponse {
+  status: string;
+  provider: string;
+  model: string;
+  qwen_configured?: boolean;
+  features?: {
+    unpublished_homework_scenario?: boolean;
+    scenario_fixtures?: boolean;
+  };
+}
+
 export async function searchMentions(query = "", kind?: MentionKind): Promise<MentionRef[]> {
   const params = new URLSearchParams();
   if (query) params.set("q", query);
@@ -10,12 +21,7 @@ export async function searchMentions(query = "", kind?: MentionKind): Promise<Me
   return body.items;
 }
 
-export async function getHealth(): Promise<{
-  status: string;
-  provider: string;
-  model: string;
-  qwen_configured?: boolean;
-}> {
+export async function getHealth(): Promise<HealthResponse> {
   const response = await fetch("/api/health");
   if (!response.ok) throw new Error("Agent 服务不可用");
   return response.json();

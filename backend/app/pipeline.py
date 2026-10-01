@@ -17,6 +17,8 @@ from .models import (
     RunEvent,
 )
 from .providers.base import ModelProvider
+from .recommendation_renderer import RecommendationRenderer, RecommendationRenderError
+from .scenario_policy import ScenarioPolicyRegistry
 
 
 class AgentPipeline:
@@ -26,10 +28,14 @@ class AgentPipeline:
         registry: CapabilityRegistry,
         resolver: ContextResolver,
         provider: ModelProvider,
+        scenario_registry: ScenarioPolicyRegistry | None = None,
+        recommendation_renderer: RecommendationRenderer | None = None,
     ) -> None:
         self._registry = registry
         self._resolver = resolver
         self._provider = provider
+        self._scenario_registry = scenario_registry
+        self._recommendation_renderer = recommendation_renderer or RecommendationRenderer()
 
     async def run(self, request: AgentRunRequest) -> AsyncIterator[RunEvent]:
         run_id = str(uuid4())
@@ -127,7 +133,38 @@ class AgentPipeline:
         }
         candidates = self._registry.list()
         stage_started_at = perf_counter()
-        route = await self._provider.choose_capabilities(intent, candidates, forced_ids)
+        scenario = (
+            self._scenario_registry.resolve(request.message, intent, candidates)
+            if self._scenario_registry is not None
+            else None
+        )
+        if scenario is not None and scenario.matched:
+            yield event(
+                "scenario.matched",
+                {
+                    "scenario_id": scenario.route.scenario_id if scenario.route else "list-unpublished-homeworks",
+                    "missing": list(scenario.missing),
+                    "explanation": (
+                        "业务 Policy 优先于通用模型路由，确保查询助手只供数、备课助手拥有最终输出。"
+                    ),
+                },
+            )
+            if scenario.route is None:
+                question = f"当前场景还缺少：{'、'.join(scenario.missing)}。请先导入对应 Skill 或连接 MCP。"
+                yield event("run.needs_input", {"question": question, "missing": list(scenario.missing)})
+                yield event(
+                    "message.completed",
+                    {
+                        "content": question,
+                        "character_count": len(question),
+                        "duration_ms": 0,
+                        "status": "needs_input",
+                    },
+                )
+                return
+            route = scenario.route
+        else:
+            route = await self._provider.choose_capabilities(intent, candidates, forced_ids)
         yield event(
             "route.selected",
             {
@@ -245,6 +282,65 @@ class AgentPipeline:
                     ),
                 },
             )
+
+        if route.output_contract:
+            yield event(
+                "output.validating",
+                {
+                    "output_contract": route.output_contract,
+                    "primary_skill_id": route.primary_skill_id,
+                    "supporting_skill_ids": route.supporting_skill_ids,
+                    "explanation": "由 output_owner 按指定协议生成卡片，后端负责最终 Schema 校验。",
+                },
+            )
+            try:
+                recommendation = self._recommendation_renderer.render(route.output_contract, results)
+            except RecommendationRenderError as exc:
+                message = f"已完成查询，但卡片生成失败：{exc}"
+                yield event(
+                    "output.validation_failed",
+                    {"output_contract": route.output_contract, "error": str(exc)},
+                )
+                yield event(
+                    "message.completed",
+                    {"content": message, "character_count": len(message), "duration_ms": 0},
+                )
+                return
+
+            recommendation_data = recommendation.model_dump(mode="json")
+            yield event(
+                "output.validated",
+                {
+                    "output_contract": route.output_contract,
+                    "card_type": recommendation.card_type,
+                    "section_count": len(recommendation.sections),
+                    "item_count": sum(len(section.items) for section in recommendation.sections),
+                    "explanation": "卡片已通过 Pydantic Schema 校验，不允许退化为自由 Markdown。",
+                },
+            )
+            yield event("recommendation", {"content": recommendation_data})
+            yield event(
+                "message.completed",
+                {
+                    "content": recommendation.text,
+                    "character_count": len(recommendation.text),
+                    "duration_ms": 0,
+                    "status": "recommendation",
+                },
+            )
+            yield event(
+                "run.completed",
+                {
+                    "selected_capabilities": [item.capability_id for item in route.selections],
+                    "context_count": len(context),
+                    "history_count": len(history),
+                    "scenario_id": route.scenario_id,
+                    "output_contract": route.output_contract,
+                    "duration_ms": round((perf_counter() - run_started_at) * 1_000, 2),
+                    "explanation": "场景查询、卡片生成和输出校验均已完成。",
+                },
+            )
+            return
 
         full_answer = ""
         yield event(

@@ -74,6 +74,27 @@ export QWEN_BASE_URL='https://dashscope.aliyuncs.com/compatible-mode/v1'
 - 当前会话保存在浏览器本地存储中，刷新页面可恢复；点击“新对话”会清空本地会话。
 - `run.started` 和 `run.completed` 事件会记录实际使用的历史条数。
 
+## 未发布作业卡片场景
+
+该业务场景默认关闭，因此合并到通用分支后不会改变原有 Router 行为。
+
+使用内置模拟数据预览完整闭环：
+
+```properties
+ENABLE_UNPUBLISHED_HOMEWORK_SCENARIO=true
+ENABLE_SCENARIO_FIXTURES=true
+```
+
+接入真实 Skill 和 MCP：
+
+```properties
+ENABLE_UNPUBLISHED_HOMEWORK_SCENARIO=true
+ENABLE_SCENARIO_FIXTURES=false
+```
+
+场景要求查询助手作为 `data_provider`、备课助手作为 `output_owner`，最终输出必须通过
+`preparation.unpublished_homework_cards.v1` Schema 校验。
+
 ## 示例
 
 在输入框键入 `@`，选择“支付故障诊断”Skill 和“checkout.py”文件，然后发送：

@@ -16,6 +16,8 @@ from .mcp_manager import McpConnectionError, McpManager
 from .models import AgentRunRequest, McpServerConfig, MentionKind, MentionRef
 from .pipeline import AgentPipeline
 from .providers import DemoModelProvider, OpenAIModelProvider, QwenModelProvider
+from .scenario_fixture import register_unpublished_homework_fixture
+from .scenario_policy import ScenarioPolicyRegistry
 from .skill_store import MAX_SKILL_ARCHIVE_BYTES, SkillImportError, SkillStore
 
 settings = get_settings()
@@ -23,6 +25,8 @@ logger = logging.getLogger(__name__)
 data_dir = Path(settings.agent_data_dir).resolve()
 skill_store = SkillStore(data_dir / "skills")
 registry, mention_catalog = build_default_registry(skill_store.root)
+if settings.enable_unpublished_homework_scenario and settings.enable_scenario_fixtures:
+    register_unpublished_homework_fixture(registry)
 resolver = ContextResolver(mention_catalog)
 mcp_manager = McpManager(data_dir / "mcp_servers.json")
 
@@ -47,7 +51,16 @@ else:
     provider_name = "demo"
     provider_model = "deterministic-demo"
 
-pipeline = AgentPipeline(registry=registry, resolver=resolver, provider=provider)
+pipeline = AgentPipeline(
+    registry=registry,
+    resolver=resolver,
+    provider=provider,
+    scenario_registry=(
+        ScenarioPolicyRegistry()
+        if settings.enable_unpublished_homework_scenario
+        else None
+    ),
+)
 
 
 def register_mcp_capabilities(server_id: str) -> None:
@@ -103,6 +116,10 @@ async def health() -> dict:
         "provider": provider_name,
         "model": provider_model,
         "qwen_configured": bool(settings.dashscope_api_key),
+        "features": {
+            "unpublished_homework_scenario": settings.enable_unpublished_homework_scenario,
+            "scenario_fixtures": settings.enable_scenario_fixtures,
+        },
     }
 
 

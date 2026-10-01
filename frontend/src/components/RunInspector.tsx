@@ -38,6 +38,11 @@ const config: Record<string, { label: string; icon: typeof Play; chapter: string
   "run.completed": { label: "运行完成", icon: Check, chapter: "完成" },
   "run.error": { label: "运行失败", icon: CircleDot, chapter: "错误" },
   "run.needs_input": { label: "等待用户补充", icon: HelpCircle, chapter: "交互" },
+  "scenario.matched": { label: "命中业务场景", icon: Route, chapter: "策略" },
+  "output.validating": { label: "校验输出协议", icon: ShieldCheck, chapter: "输出" },
+  "output.validated": { label: "卡片校验通过", icon: Check, chapter: "输出" },
+  "output.validation_failed": { label: "卡片校验失败", icon: CircleDot, chapter: "错误" },
+  "recommendation": { label: "输出推荐卡片", icon: BookOpenCheck, chapter: "卡片" },
 };
 
 const defaultOpenTypes = new Set([
@@ -142,6 +147,12 @@ function EventDetails({ event }: { event: RunEvent }) {
       {event.type === "context.resolved" && <ContextDetails data={data} />}
       {event.type === "intent.detected" && <IntentDetails data={data} />}
       {event.type === "route.selected" && <RouteDetails data={data} />}
+      {event.type === "scenario.matched" && (
+        <>
+          <KeyValue label="场景" value={data.scenario_id} />
+          <KeyValue label="缺少能力" value={(data.missing ?? []).join("、") || "无"} />
+        </>
+      )}
       {event.type === "plan.created" && <PlanDetails data={data} />}
       {event.type === "capability.started" && <CapabilityStartDetails data={data} />}
       {event.type === "capability.arguments" && (
@@ -169,6 +180,20 @@ function EventDetails({ event }: { event: RunEvent }) {
           <KeyValue label="使用能力" value={(data.selected_capabilities ?? []).join("、") || "无"} />
           <KeyValue label="历史消息" value={`${data.history_count ?? 0} 条`} />
         </>
+      )}
+      {event.type === "output.validating" && (
+        <>
+          <KeyValue label="输出协议" value={data.output_contract} />
+          <KeyValue label="输出所有者" value={data.primary_skill_id} />
+          <KeyValue label="数据提供者" value={(data.supporting_skill_ids ?? []).join("、")} />
+        </>
+      )}
+      {event.type === "output.validated" && (
+        <div className="metric-grid">
+          <Metric label="卡片类型" value={data.card_type} wide />
+          <Metric label="分组" value={data.section_count ?? 0} />
+          <Metric label="条目" value={data.item_count ?? 0} />
+        </div>
       )}
       {event.type === "run.needs_input" && (
         <div className="needs-input-card">
@@ -238,6 +263,13 @@ function RouteDetails({ data }: { data: Record<string, any> }) {
           ))}
         </div>
       </DetailBlock>
+      {data.output_contract && (
+        <div className="output-owner-summary">
+          <KeyValue label="输出所有者" value={data.primary_skill_id} />
+          <KeyValue label="辅助 Skill" value={(data.supporting_skill_ids ?? []).join("、")} />
+          <KeyValue label="输出协议" value={data.output_contract} />
+        </div>
+      )}
       <details className="candidate-list">
         <summary>查看全部候选能力</summary>
         {(data.candidates ?? []).map((item: any) => (
@@ -327,5 +359,9 @@ function eventSummary(event: RunEvent): string {
   if (event.type === "message.completed") return `${event.data.character_count ?? 0} 个字符`;
   if (event.type === "run.completed") return `总耗时 ${event.data.duration_ms ?? 0} ms`;
   if (event.type === "run.needs_input") return event.data.question ?? "需要用户补充信息";
+  if (event.type === "scenario.matched") return event.data.missing?.length ? "场景能力尚未就绪" : event.data.scenario_id;
+  if (event.type === "output.validating") return event.data.output_contract ?? "校验卡片协议";
+  if (event.type === "output.validated") return `${event.data.item_count ?? 0} 个卡片条目`;
+  if (event.type === "recommendation") return event.data.content?.title ?? "推荐卡片";
   return event.data.message ?? "";
 }
