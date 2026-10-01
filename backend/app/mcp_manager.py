@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -37,6 +38,8 @@ class McpManager:
                 "transport": config.transport,
                 "enabled": config.enabled,
                 "header_names": sorted(config.headers),
+                "approval_policy": config.approval_policy,
+                "allowed_tools": config.allowed_tools,
                 "tool_count": len(self._tools.get(config.id, [])),
             }
             for config in self._configs.values()
@@ -87,6 +90,7 @@ class McpManager:
                 title=str(getattr(tool, "title", "") or tool.name),
                 description=str(tool.description or ""),
                 input_schema=tool.inputSchema or {"type": "object", "properties": {}},
+                read_only=bool(getattr(getattr(tool, "annotations", None), "readOnlyHint", False)),
             )
             for tool in response.tools
         ]
@@ -95,6 +99,10 @@ class McpManager:
         config = self._configs.get(server_id)
         if config is None:
             raise KeyError(f"MCP 不存在：{server_id}")
+        if not config.enabled:
+            raise PermissionError("MCP 已停用")
+        if config.allowed_tools and tool_name not in config.allowed_tools:
+            raise PermissionError("工具不在 MCP 允许列表中")
         try:
             async with self._session(config) as session:
                 result = await asyncio.wait_for(
@@ -118,7 +126,12 @@ class McpManager:
 
     def build_capabilities(self, server_id: str) -> list[tuple[Capability, Any]]:
         capabilities = []
+        config = self._configs[server_id]
+        if not config.enabled:
+            return []
         for tool in self.get_tools(server_id):
+            if config.allowed_tools and tool.name not in config.allowed_tools:
+                continue
             capability_id = f"mcp-{server_id}-{_slug(tool.name)}"[:180]
 
             async def handler(payload: dict, sid=server_id, name=tool.name):
@@ -130,9 +143,16 @@ class McpManager:
                 description=tool.description or f"MCP tool {tool.name}",
                 kind=CapabilityKind.MCP,
                 triggers=_terms(f"{tool.name} {tool.title} {tool.description}"),
-                permissions=["external"],
+                permissions=["external"] if tool.read_only else ["external", "write"],
+                requires_approval=config.approval_policy == "always" or not tool.read_only,
                 input_schema=tool.input_schema,
-                metadata={"mcp_server_id": server_id, "mcp_tool_name": tool.name},
+                metadata={
+                    "mcp_server_id": server_id,
+                    "mcp_tool_name": tool.name,
+                    "connection_hash": hashlib.sha256(
+                        config.model_dump_json().encode()
+                    ).hexdigest(),
+                },
             )
             capabilities.append((descriptor, handler))
         return capabilities
@@ -166,8 +186,7 @@ class McpManager:
             return
         raw = json.loads(self._config_path.read_text(encoding="utf-8"))
         self._configs = {
-            item["id"]: McpServerConfig.model_validate(item)
-            for item in raw.get("servers", [])
+            item["id"]: McpServerConfig.model_validate(item) for item in raw.get("servers", [])
         }
 
     def _save(self) -> None:

@@ -94,15 +94,26 @@ class MentionCatalog:
                 key=lambda item: item.label.casefold(),
             )
             balanced.extend(group[:quota])
+        balanced.extend(item for item in items if item.kind not in quotas)
         return balanced
 
 
 class ContextResolver:
     def __init__(self, catalog: MentionCatalog) -> None:
         self._catalog = catalog
+        self._resolvers: dict[str, Callable[[MentionRef], Awaitable[ResolvedContextItem]]] = {}
+
+    def register(
+        self, kind: str, resolver: Callable[[MentionRef], Awaitable[ResolvedContextItem]]
+    ) -> None:
+        self._resolvers[kind] = resolver
 
     async def resolve(self, mentions: list[MentionRef]) -> list[ResolvedContextItem]:
-        return [self._resolve_one(mention) for mention in mentions]
+        items = []
+        for mention in mentions:
+            resolver = self._resolvers.get(mention.kind)
+            items.append(await resolver(mention) if resolver else self._resolve_one(mention))
+        return items
 
     def _resolve_one(self, mention: MentionRef) -> ResolvedContextItem:
         if mention.kind == MentionKind.FILE:
@@ -131,6 +142,8 @@ class ContextResolver:
                 content=f"用户显式指定 Skill：{mention.id}",
                 metadata={"forced": True},
             )
+        if mention.kind not in {MentionKind.TOOL, MentionKind.MCP}:
+            raise ValueError(f"未注册该引用类型的 Resolver：{mention.kind}")
         return ResolvedContextItem(
             mention=mention,
             source="capability-registry",
@@ -141,18 +154,18 @@ class ContextResolver:
 
 
 DEMO_FILES = {
-    "checkout.py": '''async def charge_order(order, gateway):
+    "checkout.py": """async def charge_order(order, gateway):
     result = await gateway.charge(order.total)
     if result.status != "ok":
         return {"success": False, "reason": result.message}
     order.status = "paid"
     return {"success": True}
-''',
-    "payment_test.py": '''async def test_charge_timeout(gateway, order):
+""",
+    "payment_test.py": """async def test_charge_timeout(gateway, order):
     gateway.charge.side_effect = TimeoutError()
     result = await charge_order(order, gateway)
     assert result["success"] is False
-''',
+""",
 }
 
 DEMO_RESOURCES = {
@@ -212,6 +225,49 @@ def register_skill(
     )
 
 
+def register_skill_reference_tool(registry: CapabilityRegistry) -> None:
+    async def read_reference(payload: dict) -> dict:
+        arguments = payload["arguments"]
+        skill_id = arguments["skill_id"]
+        if skill_id not in payload.get("loaded_skills", []):
+            raise PermissionError("只能读取本轮已加载 Skill 的参考文件")
+        registration = registry.get(skill_id)
+        root = Path(registration.descriptor.metadata["root"]).resolve()
+        path = (root / arguments["path"]).resolve()
+        if not path.is_relative_to(root) or path.suffix.lower() not in {
+            ".md",
+            ".txt",
+            ".json",
+            ".yaml",
+            ".yml",
+        }:
+            raise PermissionError("参考文件必须位于 Skill 目录内，且为支持的文本格式")
+        if not path.is_file() or path.stat().st_size > 128_000:
+            raise ValueError("参考文件不存在或超过 128 KB")
+        return {
+            "skill_id": skill_id,
+            "path": arguments["path"],
+            "content": path.read_text(encoding="utf-8"),
+        }
+
+    registry.upsert(
+        Capability(
+            id="skill-read-reference",
+            name="读取 Skill 参考文件",
+            description="读取本轮已加载 Skill 中 references/assets 的文本文件，不执行脚本。",
+            kind=CapabilityKind.TOOL,
+            permissions=["read"],
+            input_schema={
+                "type": "object",
+                "properties": {"skill_id": {"type": "string"}, "path": {"type": "string"}},
+                "required": ["skill_id", "path"],
+                "additionalProperties": False,
+            },
+        ),
+        read_reference,
+    )
+
+
 def build_default_registry(
     external_skill_root: Path | None = None,
 ) -> tuple[CapabilityRegistry, MentionCatalog]:
@@ -219,6 +275,7 @@ def build_default_registry(
 
     registry = CapabilityRegistry()
     catalog = MentionCatalog()
+    register_skill_reference_tool(registry)
 
     for skill in discover_skills(Path(__file__).parent / "skills", source="built-in"):
         register_skill(registry, catalog, skill)

@@ -1,4 +1,4 @@
-export type MentionKind = "skill" | "file" | "resource" | "tool" | "mcp";
+export type MentionKind = "skill" | "file" | "resource" | "tool" | "mcp" | (string & {});
 
 export interface MentionRef {
   kind: MentionKind;

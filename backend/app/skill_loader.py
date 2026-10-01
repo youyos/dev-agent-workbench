@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -49,6 +50,11 @@ def load_skill_directory(directory: Path, *, source: str) -> LoadedSkill:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     frontmatter, body = _parse_skill_markdown(manifest_path.read_text(encoding="utf-8"))
     skill_id = str(config.get("id") or frontmatter.get("name") or directory.name)
+    dependencies = config.get("required_capabilities", [])
+    if not isinstance(dependencies, list) or not all(
+        isinstance(item, str) for item in dependencies
+    ):
+        raise ValueError("required_capabilities 必须是字符串数组")
     return LoadedSkill(
         descriptor=Capability(
             id=skill_id,
@@ -63,9 +69,15 @@ def load_skill_directory(directory: Path, *, source: str) -> LoadedSkill:
                 "root": str(directory),
                 **{
                     key: config[key]
-                    for key in ("role", "can_own_output", "output_contracts")
+                    for key in (
+                        "role",
+                        "can_own_output",
+                        "output_contracts",
+                        "required_capabilities",
+                    )
                     if key in config
                 },
+                "instruction_hash": hashlib.sha256(body.encode()).hexdigest(),
             },
         ),
         instructions=body.strip(),

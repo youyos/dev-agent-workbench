@@ -18,6 +18,8 @@ from .base import ModelProvider
 class DemoModelProvider(ModelProvider):
     """Deterministic provider that demonstrates the complete pipeline offline."""
 
+    supports_history = True
+
     async def analyze_intent(
         self,
         message: str,
@@ -53,7 +55,11 @@ class DemoModelProvider(ModelProvider):
             expected = "清晰、可执行的回答"
             response_style = "direct"
 
-        entities = [item.title for item in context if item.mention.kind.value in {"file", "resource"}]
+        entities = [
+            item.title
+            for item in context
+            if item.mention.kind in {"file", "resource"} and item.source != "conversation-history"
+        ]
         constraints = re.findall(r"(?:不要|必须|只允许|限定)[^，。；\n]+", message)
         return TaskIntent(
             goal=message,
@@ -81,8 +87,6 @@ class DemoModelProvider(ModelProvider):
         ranked.sort(key=lambda item: (-item[0], item[1].id))
 
         chosen = [item for item in ranked if item[0] > 0][:3]
-        if not chosen and ranked:
-            chosen = [ranked[0]]
         selections = [
             CapabilitySelection(
                 capability_id=capability.id,

@@ -118,15 +118,15 @@ export function MentionComposer({ disabled, onSubmit }: Props) {
               >{kind === "all" ? "全部" : labelByKind[kind]}</button>
             ))}
           </div>
-          {(["skill", "file", "resource", "tool", "mcp"] as MentionKind[]).map((kind) => {
+          {Array.from(new Set(options.map((item) => item.kind))).map((kind) => {
             const group = options.filter((item) => item.kind === kind);
             if (!group.length) return null;
             return (
               <div className="mention-group" key={kind}>
-                {kindFilter === "all" && <div className="mention-group-title"><span>{labelByKind[kind]}</span><em>{group.length}</em></div>}
+                {kindFilter === "all" && <div className="mention-group-title"><span>{labelByKind[kind] || kind}</span><em>{group.length}</em></div>}
                 {group.map((item) => {
                   const index = options.indexOf(item);
-                  const Icon = iconByKind[item.kind];
+                  const Icon = iconByKind[item.kind] || Puzzle;
                   return (
                     <button
                       className={index === active ? "mention-option active" : "mention-option"}
@@ -139,7 +139,7 @@ export function MentionComposer({ disabled, onSubmit }: Props) {
                         <strong>{item.label}</strong>
                         <small>{String(item.metadata?.description ?? item.id)}</small>
                       </span>
-                      <span className="kind-label">{labelByKind[item.kind]}</span>
+                      <span className="kind-label">{labelByKind[item.kind] || item.kind}</span>
                     </button>
                   );
                 })}
@@ -152,7 +152,7 @@ export function MentionComposer({ disabled, onSubmit }: Props) {
       {mentions.length > 0 && (
         <div className="mention-chips">
           {mentions.map((mention) => {
-            const Icon = iconByKind[mention.kind];
+            const Icon = iconByKind[mention.kind] || Puzzle;
             return (
               <span className={`mention-chip kind-${mention.kind}`} key={`${mention.kind}:${mention.id}`}>
                 <Icon size={13} /> {mention.label}

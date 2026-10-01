@@ -15,6 +15,7 @@ dependencies = [
   "openai>=1.108,<3",
   "mcp>=1.27,<2",
   "python-multipart>=0.0.20,<1",
+  "jsonschema>=4.20,<5",
 ]
 
 [project.optional-dependencies]

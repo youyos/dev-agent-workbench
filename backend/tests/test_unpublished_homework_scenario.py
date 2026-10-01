@@ -7,6 +7,8 @@ from app.models import AgentRunRequest, Capability, CapabilityKind, CapabilityRe
 from app.pipeline import AgentPipeline
 from app.providers.demo import DemoModelProvider
 from app.recommendation_renderer import RecommendationRenderer
+from app.runtime_extensions import OutputRegistry, PolicyRegistry
+from app.scenario_extension import register_homework_extension
 from app.scenario_policy import (
     UNPUBLISHED_HOMEWORK_CONTRACT,
     ScenarioPolicyRegistry,
@@ -77,7 +79,7 @@ def test_renderer_builds_ai_hub_compatible_homework_card():
                                 "manage_all_group": False,
                                 "custom_field": {"preserved": True},
                             }
-                        ]
+                        ],
                     }
                 },
                 ensure_ascii=False,
@@ -128,22 +130,23 @@ async def test_pipeline_emits_validated_recommendation_event():
             capability,
             query_handler if capability.kind is CapabilityKind.MCP else skill_handler,
         )
+    policies = PolicyRegistry()
+    outputs = OutputRegistry()
+    register_homework_extension(policies, outputs)
     pipeline = AgentPipeline(
         registry=registry,
         resolver=ContextResolver(MentionCatalog()),
         provider=DemoModelProvider(),
-        scenario_registry=ScenarioPolicyRegistry(),
+        policies=policies,
+        outputs=outputs,
     )
 
     events = [
-        event
-        async for event in pipeline.run(
-            AgentRunRequest(message="查询未发布的作业列表")
-        )
+        event async for event in pipeline.run(AgentRunRequest(message="查询未发布的作业列表"))
     ]
 
     event_types = [event.type for event in events]
-    assert "scenario.matched" in event_types
+    assert "policy.matched" in event_types
     assert "output.validated" in event_types
     assert "recommendation" in event_types
     recommendation = next(event for event in events if event.type == "recommendation")

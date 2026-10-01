@@ -109,6 +109,10 @@ kbd { font: 10px "DM Mono"; border: 1px solid #394254; border-bottom-color: #535
 .cursor { display: inline-block; width: 6px; height: 15px; background: var(--accent); vertical-align: text-bottom; animation: blink 1s infinite; }
 
 .composer-wrap { flex: 0 0 auto; padding: 16px max(28px, calc((100% - 760px) / 2)) 20px; background: linear-gradient(transparent, #090c12 25%); }
+.runtime-approval { margin: 10px 0; padding: 12px; border: 1px solid #52617a; border-radius: 9px; background: #141b27; font-size: 12px; }
+.runtime-approval pre { max-height: 130px; overflow: auto; white-space: pre-wrap; }
+.runtime-approval button { margin-right: 9px; padding: 6px 9px; background: #25374b; border: 1px solid #516278; border-radius: 6px; cursor: pointer; }
+.runtime-notice { color: #ffbe77; font-size: 12px; }
 .composer-shell { position: relative; border: 1px solid #30394a; border-radius: 14px; background: #10151e; box-shadow: 0 18px 60px rgba(0,0,0,.3); transition: border .2s; }
 .composer-shell:focus-within { border-color: #52617a; }
 .composer-shell textarea { width: 100%; resize: none; border: 0; outline: 0; color: #e9edf5; background: transparent; padding: 14px 15px 8px; font-size: 13px; line-height: 1.6; }

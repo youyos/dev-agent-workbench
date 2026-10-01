@@ -80,13 +80,18 @@ export async function streamRun(
   history: Array<{ role: "user" | "assistant"; content: string }>,
   onEvent: (event: RunEvent) => void,
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<void> {
   const response = await fetch("/api/runs/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, mentions, history }),
+    body: JSON.stringify({ message, mentions, history, session_id: sessionId || null }),
     signal,
   });
+  await readEventStream(response, onEvent);
+}
+
+export async function readEventStream(response: Response, onEvent: (event: RunEvent) => void) {
   if (!response.ok || !response.body) {
     throw new Error(`Agent 请求失败：${response.status}`);
   }
@@ -107,4 +112,36 @@ export async function streamRun(
     }
     if (done) break;
   }
+}
+
+export async function getSession(id: string): Promise<any> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+  if (!response.ok) throw new Error("无法恢复会话");
+  return response.json();
+}
+
+export async function getRun(id: string): Promise<any> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
+  if (!response.ok) throw new Error("无法加载运行状态");
+  return response.json();
+}
+
+export async function getRunEvents(id: string): Promise<RunEvent[]> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(id)}/events`);
+  if (!response.ok) throw new Error("无法加载执行记录");
+  return (await response.json()).items;
+}
+
+export async function cancelRun(id: string) {
+  const response = await fetch(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+  if (!response.ok) throw new Error("取消失败");
+}
+
+export async function approveRun(id: string, approvalId: string, approved: boolean,
+                                 onEvent: (event: RunEvent) => void, signal?: AbortSignal) {
+  const response = await fetch(`/api/runs/${encodeURIComponent(id)}/approval`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, signal,
+    body: JSON.stringify({ approval_id: approvalId, approved }),
+  });
+  await readEventStream(response, onEvent);
 }

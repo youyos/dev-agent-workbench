@@ -6,7 +6,7 @@ import { MentionComposer } from "./components/MentionComposer";
 import { RunInspector } from "./components/RunInspector";
 import { ExtensionDrawer } from "./components/ExtensionDrawer";
 import { RecommendationCard } from "./components/RecommendationCard";
-import { getHealth, streamRun } from "./lib/api";
+import { approveRun, cancelRun, getHealth, getRun, getRunEvents, getSession, streamRun } from "./lib/api";
 import type { HealthResponse } from "./lib/api";
 import { createId } from "./lib/id";
 import type { ChatEntry, MentionRef, RunEvent } from "./types";
@@ -45,15 +45,57 @@ const starterPrompts: StarterPrompt[] = [
 ];
 
 const CONVERSATION_STORAGE_KEY = "agent-flow-lab:conversation:v1";
+const SESSION_STORAGE_KEY = "agent-flow-lab:session:v1";
 
 export default function App() {
   const [messages, setMessages] = useState<ChatEntry[]>(loadConversation);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [running, setRunning] = useState(false);
+  const [restoring, setRestoring] = useState(true);
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem(SESSION_STORAGE_KEY) || "");
+  const [runId, setRunId] = useState("");
+  const [pending, setPending] = useState<any>(null);
+  const [notice, setNotice] = useState("");
+  const controller = useRef<AbortController | null>(null);
   const [provider, setProvider] = useState("连接中");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [extensionsOpen, setExtensionsOpen] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    async function restore() {
+      if (!sessionId) { setRestoring(false); return; }
+      try {
+        const session = await getSession(sessionId);
+        if (disposed) return;
+        const restored = session.messages.map((item: any) => ({
+          id: `${item.run_id}:${item.role}`, role: item.role, content: item.content,
+          recommendation: item.output?.type === "recommendation" ? item.output.content : undefined,
+        }));
+        setMessages(restored);
+        const latest = session.runs[session.runs.length - 1];
+        if (latest) {
+          const [state, trace] = await Promise.all([getRun(latest.id), getRunEvents(latest.id)]);
+          if (disposed) return;
+          setRunId(latest.id);
+          setEvents(trace);
+          if (state.pending_approval) {
+            setMessages([...restored, { id: `${latest.id}:assistant`, role: "assistant", content: "等待确认工具调用。" }]);
+            setPending({ ...state.pending_approval, assistantId: `${latest.id}:assistant` });
+          }
+        }
+      } catch {
+        if (!disposed) {
+          setNotice("服务端会话暂时无法恢复，请重试或新建对话。");
+        }
+      } finally {
+        if (!disposed) setRestoring(false);
+      }
+    }
+    void restore();
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     getHealth()
@@ -71,18 +113,23 @@ export default function App() {
   }, [messages]);
 
   useEffect(() => {
-    localStorage.setItem(CONVERSATION_STORAGE_KEY, JSON.stringify(messages.slice(-50)));
+    try {
+      localStorage.setItem(CONVERSATION_STORAGE_KEY, JSON.stringify(messages.slice(-50)));
+    } catch {
+      setNotice("浏览器缓存空间不足，会话仍保存在服务端。");
+    }
   }, [messages]);
 
   async function submit(message: string, mentions: MentionRef[]) {
+    if (running || pending || restoring) return;
     const history = messages
       .filter((item) => item.content.trim())
       .slice(-20)
       .map((item) => ({
         role: item.role,
         content: item.role === "user" && item.mentions?.length
-          ? `${item.mentions.map((mention) => `@${mention.label}`).join(" ")}\n${item.content}`
-          : item.content,
+          ? `${item.mentions.map((mention) => `@${mention.label}`).join(" ")}\n${item.content}`.slice(0, 20_000)
+          : item.content.slice(0, 20_000),
       }));
     const userEntry: ChatEntry = {
       id: createId(),
@@ -97,10 +144,24 @@ export default function App() {
       { id: assistantId, role: "assistant", content: "" },
     ]);
     setEvents([]);
+    setRunId("");
+    setNotice("");
     setRunning(true);
+    controller.current = new AbortController();
     try {
       await streamRun(message, mentions, history, (event) => {
         setEvents((items) => [...items, event]);
+        if (event.type === "run.started") {
+          setRunId(event.run_id);
+          const nextSession = String(event.data.session_id);
+          setSessionId(nextSession);
+          localStorage.setItem(SESSION_STORAGE_KEY, nextSession);
+        }
+        if (event.type === "approval.required") {
+          setPending({ ...event.data, assistantId });
+          setMessages((items) => items.map((item) => item.id === assistantId
+            ? { ...item, content: "等待确认工具调用。" } : item));
+        }
         if (event.type === "message.delta") {
           setMessages((items) =>
             items.map((item) =>
@@ -140,12 +201,13 @@ export default function App() {
         if (event.type === "run.error") {
           throw new Error(String(event.data.message ?? "运行失败"));
         }
-      });
+      }, controller.current.signal, sessionId);
     } catch (error) {
       setMessages((items) =>
         items.map((item) =>
           item.id === assistantId
-            ? { ...item, content: `运行失败：${error instanceof Error ? error.message : String(error)}` }
+            ? { ...item, content: error instanceof DOMException && error.name === "AbortError"
+              ? "运行已停止。" : `运行失败：${error instanceof Error ? error.message : String(error)}` }
             : item,
         ),
       );
@@ -154,10 +216,65 @@ export default function App() {
     }
   }
 
+  async function resolveApproval(approved: boolean) {
+    if (!pending || running) return;
+    const approval = pending;
+    setRunning(true);
+    setNotice("");
+    controller.current = new AbortController();
+    try {
+      await approveRun(runId, approval.id, approved, (event) => {
+        setEvents((items) => [...items, event]);
+        if (event.type === "approval.resolved") {
+          setPending(null);
+          setMessages((items) => items.map((item) => item.id === approval.assistantId
+            ? { ...item, content: "" } : item));
+        }
+        if (event.type === "approval.required") setPending({ ...event.data, assistantId: approval.assistantId });
+        if (event.type === "message.delta") setMessages((items) => items.map((item) => item.id === approval.assistantId
+          ? { ...item, content: item.content + String(event.data.delta) } : item));
+        if (event.type === "message.completed" || event.type === "run.needs_input") {
+          setMessages((items) => items.map((item) => item.id === approval.assistantId
+            ? { ...item, content: String(event.data.content || event.data.question || "") } : item));
+        }
+        if (event.type === "recommendation") setMessages((items) => items.map((item) => item.id === approval.assistantId
+          ? { ...item, recommendation: event.data.content } : item));
+        if (event.type === "run.error") throw new Error(String(event.data.message));
+      }, controller.current.signal);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+      setMessages((items) => items.map((item) => item.id === approval.assistantId
+        ? { ...item, content: error instanceof DOMException && error.name === "AbortError"
+          ? "运行已停止。" : `恢复运行失败：${error instanceof Error ? error.message : String(error)}` }
+        : item));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function stopRun() {
+    try {
+      if (runId) await cancelRun(runId);
+      controller.current?.abort();
+      if (pending) {
+        setMessages((items) => items.map((item) => item.id === pending.assistantId
+          ? { ...item, content: "运行已取消。" } : item));
+      }
+      setPending(null);
+      if (runId) setEvents(await getRunEvents(runId));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function newConversation() {
     setMessages([]);
     setEvents([]);
     localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    setSessionId("");
+    setRunId("");
+    setNotice("");
   }
 
   return (
@@ -189,7 +306,7 @@ export default function App() {
             </div>
             <div className="chat-header-actions">
               {messages.length > 0 && (
-                <button className="new-chat-button" disabled={running} onClick={newConversation}>
+                <button className="new-chat-button" disabled={running || Boolean(pending) || restoring} onClick={newConversation}>
                   <MessageSquarePlus size={13} /> 新对话
                 </button>
               )}
@@ -215,7 +332,16 @@ export default function App() {
           </div>
 
           <div className="composer-wrap">
-            <MentionComposer disabled={running} onSubmit={submit} />
+            {notice && <p className="runtime-notice" role="alert">{notice}</p>}
+            {(running || pending) && <button className="new-chat-button" onClick={stopRun}>停止当前运行</button>}
+            {pending && <div className="runtime-approval">
+              <strong>确认调用：{pending.name || pending.capability_id}</strong>
+              <p>{pending.reason}</p>
+              <pre>{JSON.stringify(pending.arguments, null, 2)}</pre>
+              <button disabled={running} onClick={() => resolveApproval(true)}>批准本次调用</button>
+              <button disabled={running} onClick={() => resolveApproval(false)}>拒绝</button>
+            </div>}
+            <MentionComposer disabled={running || Boolean(pending) || restoring} onSubmit={submit} />
           </div>
         </section>
 

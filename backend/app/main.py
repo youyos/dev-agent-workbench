@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,15 +8,18 @@ from typing import Annotated
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from .catalog import ContextResolver, build_default_registry, register_skill
 from .config import get_settings
 from .mcp_manager import McpConnectionError, McpManager
-from .models import AgentRunRequest, McpServerConfig, MentionKind, MentionRef
+from .models import AgentRunRequest, McpServerConfig, MentionKind, MentionRef, RunEvent
 from .pipeline import AgentPipeline
 from .providers import DemoModelProvider, OpenAIModelProvider, QwenModelProvider
+from .runtime_extensions import OutputRegistry, PolicyRegistry
+from .runtime_store import SQLiteRuntimeStore
+from .scenario_extension import register_homework_extension
 from .scenario_fixture import register_unpublished_homework_fixture
-from .scenario_policy import ScenarioPolicyRegistry
 from .skill_store import MAX_SKILL_ARCHIVE_BYTES, SkillImportError, SkillStore
 
 settings = get_settings()
@@ -51,15 +53,21 @@ else:
     provider_name = "demo"
     provider_model = "deterministic-demo"
 
+runtime_store = SQLiteRuntimeStore(data_dir / "runtime.db")
+policies = PolicyRegistry()
+outputs = OutputRegistry()
+if settings.enable_unpublished_homework_scenario:
+    register_homework_extension(policies, outputs)
+
 pipeline = AgentPipeline(
     registry=registry,
     resolver=resolver,
     provider=provider,
-    scenario_registry=(
-        ScenarioPolicyRegistry()
-        if settings.enable_unpublished_homework_scenario
-        else None
-    ),
+    policies=policies,
+    outputs=outputs,
+    store=runtime_store,
+    max_steps=settings.agent_max_steps,
+    operation_timeout=settings.agent_operation_timeout,
 )
 
 
@@ -83,6 +91,7 @@ def register_mcp_capabilities(server_id: str) -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    runtime_store.recover_interrupted()
     for server in mcp_manager.list_servers():
         if not server["enabled"]:
             continue
@@ -92,6 +101,7 @@ async def lifespan(_: FastAPI):
         except Exception as exc:  # noqa: BLE001 - one unavailable MCP must not block startup
             logger.warning("Unable to reconnect MCP server %s: %s", server["id"], exc)
     yield
+
 
 app = FastAPI(
     title="Dev Agent Workbench API",
@@ -135,9 +145,7 @@ async def capabilities() -> dict:
 async def skills() -> dict:
     return {
         "items": [
-            item.model_dump(mode="json")
-            for item in registry.list()
-            if item.kind.value == "skill"
+            item.model_dump(mode="json") for item in registry.list() if item.kind.value == "skill"
         ]
     }
 
@@ -206,25 +214,26 @@ async def remove_mcp_server(server_id: str) -> dict:
 @app.get("/api/mentions")
 async def mentions(
     q: Annotated[str, Query(max_length=100)] = "",
-    kind: Annotated[MentionKind | None, Query()] = None,
+    kind: Annotated[str | None, Query(max_length=80)] = None,
 ) -> dict:
-    return {
-        "items": [item.model_dump(mode="json") for item in mention_catalog.search(q, kind)]
-    }
+    return {"items": [item.model_dump(mode="json") for item in mention_catalog.search(q, kind)]}
 
 
 @app.post("/api/runs/stream")
 async def stream_run(request: AgentRunRequest) -> StreamingResponse:
+    return event_response(pipeline.run(request))
+
+
+def event_response(events) -> StreamingResponse:
     async def generate():
         try:
-            async for event in pipeline.run(request):
+            async for event in events:
                 payload = event.model_dump_json()
                 yield f"event: {event.type}\ndata: {payload}\n\n"
         except Exception as exc:  # noqa: BLE001 - normalize pipeline failures into SSE
-            payload = json.dumps(
-                {"type": "run.error", "data": {"message": str(exc)}},
-                ensure_ascii=False,
-            )
+            payload = RunEvent(
+                run_id="request-error", sequence=0, type="run.error", data={"message": str(exc)}
+            ).model_dump_json()
             yield f"event: run.error\ndata: {payload}\n\n"
 
     return StreamingResponse(
@@ -236,3 +245,75 @@ async def stream_run(request: AgentRunRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/sessions")
+async def create_session() -> dict:
+    return {"id": runtime_store.create_session()}
+
+
+@app.get("/api/sessions")
+async def sessions() -> dict:
+    return {"items": runtime_store.list_sessions()}
+
+
+@app.get("/api/sessions/{session_id}")
+async def session_detail(session_id: str) -> dict:
+    try:
+        return {
+            "id": session_id,
+            "messages": runtime_store.messages(session_id),
+            "runs": runtime_store.runs(session_id),
+        }
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/runs/{run_id}")
+async def run_detail(run_id: str) -> dict:
+    try:
+        state = runtime_store.load(run_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {
+        "run_id": state.run_id,
+        "session_id": state.session_id,
+        "status": state.status,
+        "cursor": state.cursor,
+        "plan": state.plan,
+        "output": state.output,
+        "pending_approval": state.pending_approval,
+    }
+
+
+@app.get("/api/runs/{run_id}/events")
+async def run_events(run_id: str, after: Annotated[int, Query(ge=0)] = 0) -> dict:
+    try:
+        return {"items": runtime_store.events(run_id, after)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/runs/{run_id}/cancel")
+async def cancel_run(run_id: str) -> dict:
+    try:
+        pipeline.cancel(run_id)
+        return {"status": "cancellation_requested"}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+class ApprovalDecision(BaseModel):
+    approval_id: str
+    approved: bool
+
+
+@app.post("/api/runs/{run_id}/approval")
+async def resolve_approval(run_id: str, decision: ApprovalDecision) -> StreamingResponse:
+    try:
+        state = runtime_store.load(run_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if state.status != "awaiting_approval" or not state.pending_approval:
+        raise HTTPException(409, "运行没有待处理审批")
+    return event_response(pipeline.resume(run_id, decision.approval_id, decision.approved))

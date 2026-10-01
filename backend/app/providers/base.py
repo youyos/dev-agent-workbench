@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from ..models import (
     Capability,
     CapabilityResult,
+    NextAction,
     ResolvedContextItem,
     RouteDecision,
     TaskIntent,
@@ -13,6 +14,18 @@ from ..models import (
 
 
 class ModelProvider(ABC):
+    supports_history: bool = False
+
+    async def next_action(
+        self,
+        intent: TaskIntent,
+        context: list[ResolvedContextItem],
+        results: list[CapabilityResult],
+        candidates: list[Capability],
+    ) -> NextAction:
+        """Providers without iterative planning retain a single execution pass."""
+        return NextAction(action="finish", reason="当前计划已执行完毕")
+
     @abstractmethod
     async def analyze_intent(
         self,

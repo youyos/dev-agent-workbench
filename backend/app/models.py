@@ -17,7 +17,7 @@ class MentionKind(StrEnum):
 
 
 class MentionRef(BaseModel):
-    kind: MentionKind
+    kind: str = Field(min_length=1, max_length=80)
     id: str = Field(min_length=1, max_length=200)
     label: str = Field(min_length=1, max_length=200)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -29,6 +29,7 @@ class ChatMessage(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
+    session_id: str | None = Field(default=None, min_length=1, max_length=128)
     message: str = Field(min_length=1, max_length=50_000)
     mentions: list[MentionRef] = Field(default_factory=list, max_length=20)
     history: list[ChatMessage] = Field(default_factory=list, max_length=40)
@@ -71,6 +72,8 @@ class Capability(BaseModel):
     explicit_only: bool = False
     input_schema: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    requires_approval: bool = False
+    timeout_seconds: float = Field(default=60, gt=0, le=300)
 
 
 class McpServerConfig(BaseModel):
@@ -80,6 +83,8 @@ class McpServerConfig(BaseModel):
     transport: Literal["streamable_http", "sse"] = "streamable_http"
     headers: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
+    allowed_tools: list[str] = Field(default_factory=list)
+    approval_policy: Literal["always", "writes"] = "always"
 
 
 class McpToolDescriptor(BaseModel):
@@ -88,6 +93,7 @@ class McpToolDescriptor(BaseModel):
     title: str = ""
     description: str = ""
     input_schema: dict[str, Any] = Field(default_factory=dict)
+    read_only: bool = False
 
 
 class CapabilitySelection(BaseModel):
@@ -122,6 +128,7 @@ class CapabilityResult(BaseModel):
     success: bool
     summary: str
     data: dict[str, Any] = Field(default_factory=dict)
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class RecommendationItem(BaseModel):
@@ -156,3 +163,41 @@ class RunEvent(BaseModel):
     type: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class NextAction(BaseModel):
+    action: Literal["call", "finish", "ask"] = "finish"
+    capability_id: str = ""
+    reason: str = ""
+    question: str = ""
+
+
+class PendingApproval(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    capability_id: str
+    arguments: dict[str, Any]
+    fingerprint: str
+    reason: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AgentRunContext(BaseModel):
+    run_id: str = Field(default_factory=lambda: str(uuid4()))
+    session_id: str
+    request: AgentRunRequest
+    identity: dict[str, Any] = Field(default_factory=dict)
+    status: Literal[
+        "running", "awaiting_approval", "needs_input", "completed", "failed", "cancelled"
+    ] = "running"
+    sequence: int = 0
+    history: list[ChatMessage] = Field(default_factory=list)
+    context: list[ResolvedContextItem] = Field(default_factory=list)
+    intent: TaskIntent | None = None
+    route: RouteDecision | None = None
+    plan: ExecutionPlan | None = None
+    cursor: int = 0
+    results: list[CapabilityResult] = Field(default_factory=list)
+    loaded_skills: list[str] = Field(default_factory=list)
+    bindings: dict[str, str] = Field(default_factory=dict)
+    pending_approval: PendingApproval | None = None
+    output: dict[str, Any] | None = None

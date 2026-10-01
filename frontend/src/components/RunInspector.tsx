@@ -43,6 +43,12 @@ const config: Record<string, { label: string; icon: typeof Play; chapter: string
   "output.validated": { label: "卡片校验通过", icon: Check, chapter: "输出" },
   "output.validation_failed": { label: "卡片校验失败", icon: CircleDot, chapter: "错误" },
   "recommendation": { label: "输出推荐卡片", icon: BookOpenCheck, chapter: "卡片" },
+  "policy.matched": { label: "业务策略匹配", icon: Route, chapter: "策略" },
+  "plan.updated": { label: "调整执行计划", icon: ListChecks, chapter: "规划" },
+  "execution.decided": { label: "决定下一步", icon: BrainCircuit, chapter: "决策" },
+  "approval.required": { label: "等待操作确认", icon: ShieldCheck, chapter: "审批" },
+  "approval.resolved": { label: "审批已处理", icon: Check, chapter: "审批" },
+  "run.cancelled": { label: "运行已停止", icon: CircleDot, chapter: "完成" },
 };
 
 const defaultOpenTypes = new Set([
@@ -52,11 +58,18 @@ const defaultOpenTypes = new Set([
   "plan.created",
   "capability.arguments",
   "capability.completed",
+  "execution.decided",
+  "approval.required",
 ]);
 
 export function RunInspector({ events, running }: { events: RunEvent[]; running: boolean }) {
   const [expandAll, setExpandAll] = useState(false);
   const visible = events.filter((event) => event.type !== "message.delta");
+  const lastStatus = visible[visible.length - 1]?.type;
+  const terminalLabels: Record<string, string> = {
+    "approval.required": "待确认", "run.error": "失败", "run.cancelled": "已停止",
+  };
+  const label = running ? "执行中" : terminalLabels[lastStatus || ""] || "就绪";
   return (
     <aside className="inspector">
       <div className="panel-heading trace-heading">
@@ -66,7 +79,7 @@ export function RunInspector({ events, running }: { events: RunEvent[]; running:
         </div>
         <span className={running ? "status-pill running" : "status-pill"}>
           {running ? <LoaderCircle size={12} className="spin" /> : <Check size={12} />}
-          {running ? "执行中" : "就绪"}
+          {label}
         </span>
       </div>
 
@@ -147,13 +160,18 @@ function EventDetails({ event }: { event: RunEvent }) {
       {event.type === "context.resolved" && <ContextDetails data={data} />}
       {event.type === "intent.detected" && <IntentDetails data={data} />}
       {event.type === "route.selected" && <RouteDetails data={data} />}
+      {event.type === "execution.decided" && <>
+        <KeyValue label="决策" value={data.action} />
+        <KeyValue label="原因" value={data.reason} />
+        <KeyValue label="下一能力" value={data.capability_id || "无"} />
+      </>}
       {event.type === "scenario.matched" && (
         <>
           <KeyValue label="场景" value={data.scenario_id} />
           <KeyValue label="缺少能力" value={(data.missing ?? []).join("、") || "无"} />
         </>
       )}
-      {event.type === "plan.created" && <PlanDetails data={data} />}
+      {["plan.created", "plan.updated"].includes(event.type) && <PlanDetails data={data} />}
       {event.type === "capability.started" && <CapabilityStartDetails data={data} />}
       {event.type === "capability.arguments" && (
         <DetailBlock icon={<Code2 size={13} />} title="生成的调用参数">
@@ -161,6 +179,11 @@ function EventDetails({ event }: { event: RunEvent }) {
         </DetailBlock>
       )}
       {event.type === "capability.completed" && <CapabilityResultDetails data={data} />}
+      {event.type === "approval.required" && <>
+        <KeyValue label="能力" value={data.name || data.capability_id} />
+        <KeyValue label="原因" value={data.reason} />
+        <CodeBlock value={data.arguments} />
+      </>}
       {event.type === "response.synthesizing" && (
         <div className="metric-grid">
           <Metric label="上下文" value={data.context_count ?? 0} />

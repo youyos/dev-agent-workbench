@@ -66,12 +66,12 @@ class SkillStore:
                 target = extract_root.joinpath(*path.parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(zip_file.read(item))
-            events.append({"stage": "archive.validated", "message": f"已安全解压 {len(files)} 个文件"})
+            events.append(
+                {"stage": "archive.validated", "message": f"已安全解压 {len(files)} 个文件"}
+            )
 
             manifests = [
-                path
-                for path in extract_root.rglob("SKILL.md")
-                if "__MACOSX" not in path.parts
+                path for path in extract_root.rglob("SKILL.md") if "__MACOSX" not in path.parts
             ]
             if len(manifests) != 1:
                 raise SkillImportError("ZIP 必须且只能包含一个 SKILL.md")
@@ -97,6 +97,8 @@ class SkillStore:
                     encoding="utf-8",
                 )
             provisional = load_skill_directory(skill_root, source="external")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", provisional.descriptor.id):
+                raise SkillImportError("skill.json 中的 id 必须为安全的英文、数字和连字符标识")
             destination = self.root / provisional.descriptor.id
             if destination.exists():
                 raise SkillImportError(f"Skill 已存在：{provisional.descriptor.id}")
@@ -115,4 +117,3 @@ def _normalize_skill_id(value: str) -> str:
 def _default_triggers(name: str, description: str) -> list[str]:
     terms = re.findall(r"[a-zA-Z0-9_-]{2,}|[\u4e00-\u9fff]{2,}", f"{name} {description}")
     return list(dict.fromkeys(terms))[:12]
-
